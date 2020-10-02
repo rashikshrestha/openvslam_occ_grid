@@ -1,0 +1,24 @@
+# Tuning parameters
+
+x_min: -2
+x_max: 2
+y_min: -2
+y_max: 2
+z_min: -3
+z_max: 3
+
+roll: -90
+pitch: 0
+yaw: 0
+
+
+
+top_threshold: 10
+bottom_threshold: 10
+
+path_threshold: 0.2
+
+
+# Display parameters
+size_of_landmark: 4
+size_of_keupoint: 4

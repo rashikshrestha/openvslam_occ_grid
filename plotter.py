@@ -7,33 +7,65 @@ import numpy as np
 import time
 from scipy.spatial.transform import Rotation as R
 from matplotlib.widgets import Slider
+import yaml
+
 
 
 class Plotter:
-	def __init__(self, file_name):
-		print("Initialized")
+	def __init__(self, file_name, config_file_name):
+		print("Initializing...")
+
+		# Read config file
+		with open(config_file_name) as file:
+			self.cfg = yaml.load(file, Loader=yaml.FullLoader)
+
 		# Read msg pack
 		with open(file_name, "rb") as msg_pack_file:
 		    msg_pack_byte_data = msg_pack_file.read()
 
 		self.data = msgpack.unpackb(msg_pack_byte_data)
-
+		
 		# Settings for plotting
 		plt.figure(1, figsize=[20,10])
+
 		self.ax_3d = plt.axes([0,0.2,0.5,0.8],projection='3d')
-		# self.ax_3d.set_xlim(-2, 2)
-		# self.ax_3d.set_ylim(-2, 2)
-		# self.ax_3d.set_zlim(-5, 5)
+		self.ax_3d.set_xlim(self.cfg['x_min'], self.cfg['x_max'])
+		self.ax_3d.set_ylim(self.cfg['y_min'], self.cfg['y_max'])
+		self.ax_3d.set_zlim(self.cfg['z_min'], self.cfg['z_max'])
 		self.ax_3d.set_xlabel('X axis')
 		self.ax_3d.set_ylabel('Y axis')
 		self.ax_3d.set_zlabel('Z axis')
 
-		self.ax_occ_grid	= 	plt.axes([0.5,0.2,0.45,0.75])
-		self.ax_occ_grid.set_xlim(-10,10)
-		self.ax_occ_grid.set_ylim(-4,16)
+		self.ax_occ_grid = plt.axes([0.5,0.2,0.45,0.75])
+		self.ax_occ_grid.set_xlim(self.cfg['x_min'], self.cfg['x_max'])
+		self.ax_occ_grid.set_ylim(self.cfg['y_min'], self.cfg['y_max'])
 		self.ax_occ_grid.set_xlabel('X axis')
 		self.ax_occ_grid.set_ylabel('Y axis')
 
+		self.ax_roll	= 	plt.axes([0.2, 0.1, 0.6, 0.02])
+		self.ax_pitch	= 	plt.axes([0.2, 0.075, 0.6, 0.02])
+		self.ax_yaw	= 	plt.axes([0.2, 0.05, 0.6, 0.02])
+
+		self.roll = Slider(self.ax_roll,label='Roll',valmin=-90,valmax=90,valstep=0.1)
+		self.pitch = Slider(self.ax_pitch,label='Pitch',valmin=-90,valmax=90)
+		self.yaw = Slider(self.ax_yaw,label='Yaw',valmin=-90,valmax=90)
+
+		self.roll.on_changed(self.roll_fn)
+
+	def roll_fn(self, val):
+		print(val)
+		self.cfg['roll'] = val
+
+		self.ax_3d.clear()
+
+		self.ax_3d.set_xlim(self.cfg['x_min'], self.cfg['x_max'])
+		self.ax_3d.set_ylim(self.cfg['y_min'], self.cfg['y_max'])
+		self.ax_3d.set_zlim(self.cfg['z_min'], self.cfg['z_max'])
+		self.ax_3d.set_xlabel('X axis')
+		self.ax_3d.set_ylabel('Y axis')
+		self.ax_3d.set_zlabel('Z axis')
+
+		self.load_setup()
 		
 	def rotation_matrix(self, axis, theta):
 	    """
@@ -60,34 +92,12 @@ class Plotter:
 		points = np.transpose(points)
 		return points
 
-	def quaternion_to_euler(quad):
-	    """
-	    Converts quaternions with components w, x, y, z into a  roll, pitch, yaw
-	    """
-	    w = quad[0]
-	    x = quad[1]
-	    y = quad[2]
-	    z = quad[3]
-	    sinr_cosp = 2 * (w * x + y * z)
-	    cosr_cosp = 1 - 2 * (x**2 + y**2)
-	    roll = np.arctan2(sinr_cosp, cosr_cosp)
-
-	    sinp = 2 * (w * y - z * x)
-	    pitch = np.where(np.abs(sinp) >= 1,
-	                     np.sign(sinp) * np.pi / 2,
-	                     np.arcsin(sinp))
-
-	    siny_cosp = 2 * (w * z + x * y)
-	    cosy_cosp = 1 - 2 * (y**2 + z**2)
-	    yaw = np.arctan2(siny_cosp, cosy_cosp)
-
-	    eul = [roll, pitch, yaw]
-	    return eul
-
 	def extract_keyframe_poses(self):
 		"""
 		Extract keyframe poses
 		"""
+		print('Extracting keyframes ...')
+
 		kfs_trans = []
 		kfs_rot = []
 		kfs_pos = []
@@ -116,6 +126,7 @@ class Plotter:
 		"""
 		Extract landmark poses
 		"""
+		print('Extracting landmarks ...')
 		lms_trans = []
 		for lm in self.data['landmarks']:
 			lmtrans = self.data['landmarks'][lm]['pos_w']
@@ -125,6 +136,8 @@ class Plotter:
 		self.landmarks_trans = np.array(lms_trans)
 
 	def rotate_keypoints_and_landmarks(self, x_angle, y_angle, z_angle):
+
+		print('Applying rotation ...')
 
 		self.keyframes_pos = self.rotate([1,0,0],x_angle,self.keyframes_pos)
 		self.landmarks_trans = self.rotate([1,0,0],x_angle,self.landmarks_trans)
@@ -146,6 +159,8 @@ class Plotter:
 		return np.array(new_points)
 
 	def apply_height_threshold(self, lower_threshold, upper_threshold):
+
+		print("Applying height threshod ...")
 
 		v_min = np.amin(self.landmarks_trans, axis=0)[2]
 		v_max = np.amax(self.landmarks_trans, axis=0)[2]
@@ -188,11 +203,7 @@ class Plotter:
 
 	def plot_keyframes(self):
 
-		# self.ax_3d.scatter3D(self.keyframes_trans[:,0],self.keyframes_trans[:,1],self.keyframes_trans[:,2],color="r", s=4);
-		# self.ax_occ_grid.scatter(self.keyframes_trans[:,0],self.keyframes_trans[:,1], color="r", s=4);
-
 		self.ax_3d.scatter3D(self.keyframes_pos[:,0],self.keyframes_pos[:,1],self.keyframes_pos[:,2],color="blue", s=4);
-
 		self.ax_occ_grid.scatter(self.keyframes_pos[:,0],self.keyframes_pos[:,1], color="blue", s=2);
 
 	def plot_landmarks(self):
@@ -213,27 +224,30 @@ class Plotter:
 			# if i>50:
 			# 	break
 
+	def load_setup(self):
+
+		print("Loading setup ...")
+		self.rotate_keypoints_and_landmarks(self.cfg['roll'],self.cfg['pitch'],self.cfg['yaw'])
+		self.apply_height_threshold(self.cfg['bottom_threshold'],self.cfg['top_threshold'])
+		self.apply_path_threshold(self.cfg['path_threshold'])
+
+		self.plot_keyframes()
+		self.plot_landmarks()
 
 
 
 if __name__ == "__main__": 
 
-	if len(sys.argv) != 2:
-		print('Implementation:   python3 plotter.py /path/to/msgpack/file.msg')
+	if len(sys.argv) != 3:
+		print('Implementation:   python3 plotter.py /path/to/msgpack/file.msg /path/to/msgpack/config_file.yaml')
 		sys.exit()
     
-	p = Plotter(sys.argv[1])
+	p = Plotter(sys.argv[1],sys.argv[2])
 
 	p.extract_keyframe_poses()
 	p.extract_landmark_poses()
 
-	p.rotate_keypoints_and_landmarks(-90,0,0)
-	p.apply_height_threshold(10,10)
-	p.apply_path_threshold(0.4)
-
-
-	p.plot_keyframes()
-	p.plot_landmarks()
+	p.load_setup()
 
 	# p.animate_keyframes(0.1);
 
